@@ -1,0 +1,501 @@
+     1|<!DOCTYPE html>
+     2|<html lang="zh-CN">
+     3|<head>
+     4|  <meta charset="UTF-8">
+     5|  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     6|  <title>Mini Terraria - 像素冒险</title>
+     7|  <style>
+     8|    * { margin: 0; padding: 0; box-sizing: border-box; }
+     9|    body {
+    10|      background: #1a1a2e;
+    11|      display: flex;
+    12|      justify-content: center;
+    13|      align-items: center;
+    14|      min-height: 100vh;
+    15|      font-family: 'Courier New', monospace;
+    16|      overflow: hidden;
+    17|    }
+    18|    #gameContainer {
+    19|      position: relative;
+    20|      border: 3px solid #444;
+    21|      box-shadow: 0 0 30px rgba(0,0,0,0.5);
+    22|    }
+    23|    canvas { display: block; }
+    24|    #ui {
+    25|      position: absolute;
+    26|      top: 10px;
+    27|      left: 10px;
+    28|      color: white;
+    29|      font-size: 14px;
+    30|      text-shadow: 2px 2px 2px black;
+    31|    }
+    32|    #inventory {
+    33|      position: absolute;
+    34|      bottom: 10px;
+    35|      left: 50%;
+    36|      transform: translateX(-50%);
+    37|      display: flex;
+    38|      gap: 4px;
+    39|    }
+    40|    .inv-slot {
+    41|      width: 40px;
+    42|      height: 40px;
+    43|      background: rgba(0,0,0,0.7);
+    44|      border: 2px solid #555;
+    45|      display: flex;
+    46|      align-items: center;
+    47|      justify-content: center;
+    48|      color: white;
+    49|      font-size: 10px;
+    50|      position: relative;
+    51|    }
+    52|    .inv-slot.selected { border-color: #ffcc00; }
+    53|    .inv-count {
+    54|      position: absolute;
+    55|      bottom: 2px;
+    56|      right: 4px;
+    57|      font-size: 10px;
+    58|    }
+    59|    #instructions {
+    60|      position: absolute;
+    61|      top: 10px;
+    62|      right: 10px;
+    63|      color: #aaa;
+    64|      font-size: 11px;
+    65|      text-align: right;
+    66|      line-height: 1.6;
+    67|    }
+    68|    #title-screen {
+    69|      position: absolute;
+    70|      top: 0;
+    71|      left: 0;
+    72|      width: 100%;
+    73|      height: 100%;
+    74|      background: rgba(0,0,0,0.85);
+    75|      display: flex;
+    76|      flex-direction: column;
+    77|      align-items: center;
+    78|      justify-content: center;
+    79|      color: white;
+    80|      z-index: 10;
+    81|    }
+    82|    #title-screen h1 {
+    83|      font-size: 48px;
+    84|      color: #4ade80;
+    85|      text-shadow: 3px 3px 0 #166534;
+    86|      margin-bottom: 10px;
+    87|    }
+    88|    #title-screen p { color: #888; margin-bottom: 30px; }
+    89|    #start-btn {
+    90|      padding: 15px 40px;
+    91|      font-size: 20px;
+    92|      background: #4ade80;
+    93|      color: #000;
+    94|      border: none;
+    95|      cursor: pointer;
+    96|      font-family: 'Courier New', monospace;
+    97|      font-weight: bold;
+    98|    }
+    99|    #start-btn:hover { background: #22c55e; }
+   100|  </style>
+   101|</head>
+   102|<body>
+   103|  <div id="gameContainer">
+   104|    <canvas id="game"></canvas>
+   105|    <div id="ui">
+   106|      <div>❤️ <span id="hp">100</span></div>
+   107|      <div>⛏️ <span id="depth">0</span>m</div>
+   108|      <div>🕐 <span id="time">白天</span></div>
+   109|    </div>
+   110|    <div id="inventory"></div>
+   111|    <div id="instructions">
+   112|      WASD/方向键 移动<br>
+   113|      空格 跳跃<br>
+   114|      鼠标左键 挖掘<br>
+   115|      鼠标右键 放置<br>
+   116|      1-9 切换物品
+   117|    </div>
+   118|    <div id="title-screen">
+   119|      <h1>⛏️ Mini Terraria</h1>
+   120|      <p>AI生成的像素冒险世界</p>
+   121|      <button id="start-btn">开始游戏</button>
+   122|    </div>
+   123|  </div>
+   124|
+   125|  <script>
+   126|    // 游戏配置
+   127|    const TILE = 32;
+   128|    const WIDTH = 800;
+   129|    const HEIGHT = 600;
+   130|    const WORLD_W = 200;
+   131|    const WORLD_H = 100;
+   132|    const GRAVITY = 0.5;
+   133|    const JUMP = -10;
+   134|    const SPEED = 4;
+   135|
+   136|    // 方块类型
+   137|    const BLOCKS = {
+   138|      0: { name: '空气', color: null },
+   139|      1: { name: '草方块', color: '#4ade80' },
+   140|      2: { name: '泥土', color: '#92400e' },
+   141|      3: { name: '石头', color: '#6b7280' },
+   142|      4: { name: '煤炭', color: '#1f2937' },
+   143|      5: { name: '铁矿', color: '#b45309' },
+   144|      6: { name: '金矿', color: '#eab308' },
+   145|      7: { name: '钻石', color: '#67e8f9' },
+   146|      8: { name: '木头', color: '#a16207' },
+   147|      9: { name: '树叶', color: '#15803d' },
+   148|      10: { name: '水', color: '#3b82f6', alpha: 0.6 },
+   149|      11: { name: '沙子', color: '#fbbf24' }
+   150|    };
+   151|
+   152|    // 画布设置
+   153|    const canvas = document.getElementById('game');
+   154|    const ctx = canvas.getContext('2d');
+   155|    canvas.width = WIDTH;
+   156|    canvas.height = HEIGHT;
+   157|
+   158|    // 游戏状态
+   159|    let gameStarted = false;
+   160|    let world = [];
+   161|    let camera = { x: 0, y: 0 };
+   162|    let player = {
+   163|      x: WORLD_W / 2 * TILE,
+   164|      y: 0,
+   165|      vx: 0,
+   166|      vy: 0,
+   167|      width: 24,
+   168|      height: 32,
+   169|      onGround: false,
+   170|      hp: 100,
+   171|      maxHp: 100,
+   172|      inventory: {},
+   173|      selectedSlot: 0
+   174|    };
+   175|    let keys = {};
+   176|    let mouse = { x: 0, y: 0, left: false, right: false };
+   177|    let time = 0;
+   178|    let dayTime = true;
+   179|    let enemies = [];
+   180|    let particles = [];
+   181|
+   182|    // 生成世界
+   183|    function generateWorld() {
+   184|      world = [];
+   185|      for (let x = 0; x < WORLD_W; x++) {
+   186|        world[x] = [];
+   187|        // 地形高度 (简单正弦波 + 随机)
+   188|        let height = Math.floor(20 + Math.sin(x * 0.05) * 5 + Math.random() * 3);
+   189|        
+   190|        for (let y = 0; y < WORLD_H; y++) {
+   191|          if (y < height) {
+   192|            world[x][y] = 0; // 空气
+   193|          } else if (y === height) {
+   194|            world[x][y] = 1; // 草
+   195|          } else if (y < height + 5) {
+   196|            world[x][y] = 2; // 泥土
+   197|          } else if (y < height + 20) {
+   198|            // 石头层，随机矿石
+   199|            let r = Math.random();
+   200|            if (r < 0.03) world[x][y] = 7; // 钻石
+   201|            else if (r < 0.08) world[x][y] = 6; // 金
+   202|            else if (r < 0.15) world[x][y] = 5; // 铁
+   203|            else if (r < 0.22) world[x][y] = 4; // 煤
+   204|            else world[x][y] = 3; // 石头
+   205|          } else {
+   206|            world[x][y] = 3; // 深层石头
+   207|          }
+   208|        }
+   209|      }
+   210|
+   211|      // 生成树
+   212|      for (let x = 5; x < WORLD_W - 5; x += Math.floor(5 + Math.random() * 8)) {
+   213|        let height = 0;
+   214|        while (world[x][height] === 0) height++;
+   215|        let treeH = 4 + Math.floor(Math.random() * 3);
+   216|        for (let ty = 1; ty <= treeH; ty++) {
+   217|          if (height - ty >= 0) world[x][height - ty] = 8; // 木头
+   218|        }
+   219|        // 树叶
+   220|        for (let lx = -1; lx <= 1; lx++) {
+   221|          for (let ly = -2; ly <= 0; ly++) {
+   222|            let tx = x + lx, ty = height - treeH + ly;
+   223|            if (tx >= 0 && tx < WORLD_W && ty >= 0 && world[tx][ty] === 0) {
+   224|              world[tx][ty] = 9;
+   225|            }
+   226|          }
+   227|        }
+   228|      }
+   229|
+   230|      // 放置玩家
+   231|      player.x = Math.floor(WORLD_W / 2) * TILE;
+   232|      player.y = 0;
+   233|      while (world[Math.floor(player.x / TILE)][Math.floor(player.y / TILE) + 1] === 0) {
+   234|        player.y += TILE;
+   235|      }
+   236|      player.y -= TILE;
+   237|
+   238|      // 生成敌人
+   239|      enemies = [];
+   240|      for (let i = 0; i < 10; i++) {
+   241|        spawnEnemy();
+   242|      }
+   243|    }
+   244|
+   245|    function spawnEnemy() {
+   246|      let x = Math.floor(Math.random() * WORLD_W) * TILE;
+   247|      let y = 0;
+   248|      while (world[Math.floor(x / TILE)][Math.floor(y / TILE) + 1] === 0 && y < WORLD_H * TILE) {
+   249|        y += TILE;
+   250|      }
+   251|      enemies.push({
+   252|        x: x,
+   253|        y: y - TILE,
+   254|        vx: (Math.random() > 0.5 ? 1 : -1) * 1.5,
+   255|        vy: 0,
+   256|        width: 28,
+   257|        height: 28,
+   258|        hp: 30,
+   259|        maxHp: 30,
+   260|        type: Math.random() > 0.7 ? 'skeleton' : 'slime',
+   261|        damage: 10,
+   262|        timer: 0
+   263|      });
+   264|    }
+   265|
+   266|    // 碰撞检测
+   267|    function getBlock(x, y) {
+   268|      let bx = Math.floor(x / TILE);
+   269|      let by = Math.floor(y / TILE);
+   270|      if (bx < 0 || bx >= WORLD_W || by < 0 || by >= WORLD_H) return 0;
+   271|      return world[bx][by];
+   272|    }
+   273|
+   274|    function isSolid(bx, by) {
+   275|      if (bx < 0 || bx >= WORLD_W || by < 0 || by >= WORLD_H) return true;
+   276|      let b = world[bx][by];
+   277|      return b !== 0 && b !== 10; // 空气和水不是固体
+   278|    }
+   279|
+   280|    // 物理更新
+   281|    function updatePlayer() {
+   282|      // 水平移动
+   283|      player.vx = 0;
+   284|      if (keys['KeyA'] || keys['ArrowLeft']) player.vx = -SPEED;
+   285|      if (keys['KeyD'] || keys['ArrowRight']) player.vx = SPEED;
+   286|
+   287|      // 跳跃
+   288|      if ((keys['Space'] || keys['KeyW'] || keys['ArrowUp']) && player.onGround) {
+   289|        player.vy = JUMP;
+   290|        player.onGround = false;
+   291|      }
+   292|
+   293|      // 重力
+   294|      player.vy += GRAVITY;
+   295|
+   296|      // X轴碰撞
+   297|      player.x += player.vx;
+   298|      let left = Math.floor(player.x / TILE);
+   299|      let right = Math.floor((player.x + player.width) / TILE);
+   300|      let top = Math.floor(player.y / TILE);
+   301|      let bottom = Math.floor((player.y + player.height) / TILE);
+   302|
+   303|      for (let bx = left; bx <= right; bx++) {
+   304|        for (let by = top; by <= bottom; by++) {
+   305|          if (isSolid(bx, by)) {
+   306|            if (player.vx > 0) player.x = bx * TILE - player.width - 1;
+   307|            if (player.vx < 0) player.x = (bx + 1) * TILE + 1;
+   308|          }
+   309|        }
+   310|      }
+   311|
+   312|      // Y轴碰撞
+   313|      player.y += player.vy;
+   314|      player.onGround = false;
+   315|      left = Math.floor(player.x / TILE);
+   316|      right = Math.floor((player.x + player.width) / TILE);
+   317|      top = Math.floor(player.y / TILE);
+   318|      bottom = Math.floor((player.y + player.height) / TILE);
+   319|
+   320|      for (let bx = left; bx <= right; bx++) {
+   321|        for (let by = top; by <= bottom; by++) {
+   322|          if (isSolid(bx, by)) {
+   323|            if (player.vy > 0) {
+   324|              player.y = by * TILE - player.height - 1;
+   325|              player.vy = 0;
+   326|              player.onGround = true;
+   327|            }
+   328|            if (player.vy < 0) {
+   329|              player.y = (by + 1) * TILE + 1;
+   330|              player.vy = 0;
+   331|            }
+   332|          }
+   333|        }
+   334|      }
+   335|
+   336|      // 边界
+   337|      player.x = Math.max(0, Math.min(player.x, (WORLD_W - 1) * TILE));
+   338|      if (player.y > WORLD_H * TILE) {
+   339|        player.hp = 0;
+   340|      }
+   341|
+   342|      // 更新深度显示
+   343|      let depth = Math.floor(player.y / TILE) - 20;
+   344|      document.getElementById('depth').textContent = Math.max(0, depth);
+   345|    }
+   346|
+   347|    // 敌人AI
+   348|    function updateEnemies() {
+   349|      enemies.forEach((e, i) => {
+   350|        e.vy += GRAVITY;
+   351|        
+   352|        // 简单AI：随机移动或追踪玩家
+   353|        let dist = Math.hypot(player.x - e.x, player.y - e.y);
+   354|        if (dist < 200) {
+   355|          e.vx = player.x > e.x ? 1.5 : -1.5;
+   356|        } else {
+   357|          e.timer++;
+   358|          if (e.timer > 120) {
+   359|            e.vx = -e.vx;
+   360|            e.timer = 0;
+   361|          }
+   362|        }
+   363|
+   364|        e.x += e.vx;
+   365|        e.y += e.vy;
+   366|
+   367|        // 碰撞
+   368|        let left = Math.floor(e.x / TILE);
+   369|        let right = Math.floor((e.x + e.width) / TILE);
+   370|        let top = Math.floor(e.y / TILE);
+   371|        let bottom = Math.floor((e.y + e.height) / TILE);
+   372|
+   373|        for (let bx = left; bx <= right; bx++) {
+   374|          for (let by = top; by <= bottom; by++) {
+   375|            if (isSolid(bx, by)) {
+   376|              if (e.vy > 0) {
+   377|                e.y = by * TILE - e.height;
+   378|                e.vy = 0;
+   379|              }
+   380|              if (e.vx > 0) e.x = bx * TILE - e.width;
+   381|              if (e.vx < 0) e.x = (bx + 1) * TILE;
+   382|            }
+   383|          }
+   384|        }
+   385|
+   386|        // 碰到玩家
+   387|        if (dist < 30 && e.timer % 30 === 0) {
+   388|          player.hp -= e.damage;
+   389|          createParticles(player.x, player.y, '#ef4444', 5);
+   390|        }
+   391|
+   392|        // 掉出世界
+   393|        if (e.y > WORLD_H * TILE) {
+   394|          enemies.splice(i, 1);
+   395|          spawnEnemy();
+   396|        }
+   397|      });
+   398|    }
+   399|
+   400|    // 粒子效果
+   401|    function createParticles(x, y, color, count) {
+   402|      for (let i = 0; i < count; i++) {
+   403|        particles.push({
+   404|          x: x,
+   405|          y: y,
+   406|          vx: (Math.random() - 0.5) * 6,
+   407|          vy: (Math.random() - 0.5) * 6 - 2,
+   408|          life: 20 + Math.random() * 20,
+   409|          color: color,
+   410|          size: 2 + Math.random() * 3
+   411|        });
+   412|      }
+   413|    }
+   414|
+   415|    function updateParticles() {
+   416|      particles.forEach((p, i) => {
+   417|        p.x += p.vx;
+   418|        p.y += p.vy;
+   419|        p.vy += 0.1;
+   420|        p.life--;
+   421|        if (p.life <= 0) particles.splice(i, 1);
+   422|      });
+   423|    }
+   424|
+   425|    // 挖掘/放置
+   426|    function handleClick() {
+   427|      let worldX = Math.floor((mouse.x + camera.x) / TILE);
+   428|      let worldY = Math.floor((mouse.y + camera.y) / TILE);
+   429|      
+   430|      if (worldX < 0 || worldX >= WORLD_W || worldY < 0 || worldY >= WORLD_H) return;
+   431|
+   432|      // 左键挖掘
+   433|      if (mouse.left) {
+   434|        let block = world[worldX][worldY];
+   435|        if (block !== 0) {
+   436|          world[worldX][worldY] = 0;
+   437|          // 添加到背包
+   438|          let inv = getInventoryItems();
+   439|          let slot = inv[player.selectedSlot];
+   440|          if (slot && slot.type === block) {
+   441|            slot.count++;
+   442|          } else {
+   443|            addToInventory(block, 1);
+   444|          }
+   445|          createParticles(worldX * TILE + TILE/2, worldY * TILE + TILE/2, BLOCKS[block].color, 8);
+   446|        }
+   447|      }
+   448|
+   449|      // 右键放置
+   450|      if (mouse.right) {
+   451|        let inv = getInventoryItems();
+   452|        let slot = inv[player.selectedSlot];
+   453|        if (slot && slot.count > 0 && world[worldX][worldY] === 0) {
+   454|          world[worldX][worldY] = slot.type;
+   455|          slot.count--;
+   456|          if (slot.count <= 0) {
+   457|            removeFromInventory(slot.type);
+   458|          }
+   459|        }
+   460|      }
+   461|
+   462|      updateInventoryUI();
+   463|    }
+   464|
+   465|    // 背包系统
+   466|    function addToInventory(type, count) {
+   467|      if (!player.inventory[type]) {
+   468|        player.inventory[type] = 0;
+   469|      }
+   470|      player.inventory[type] += count;
+   471|    }
+   472|
+   473|    function removeFromInventory(type) {
+   474|      delete player.inventory[type];
+   475|    }
+   476|
+   477|    function getInventoryItems() {
+   478|      let items = [];
+   479|      for (let type in player.inventory) {
+   480|        items.push({ type: parseInt(type), count: player.inventory[type] });
+   481|      }
+   482|      return items;
+   483|    }
+   484|
+   485|    function updateInventoryUI() {
+   486|      let inv = document.getElementById('inventory');
+   487|      inv.innerHTML = '';
+   488|      let items = getInventoryItems();
+   489|      
+   490|      for (let i = 0; i < 9; i++) {
+   491|        let slot = document.createElement('div');
+   492|        slot.className = 'inv-slot' + (i === player.selectedSlot ? ' selected' : '');
+   493|        
+   494|        if (items[i]) {
+   495|          let block = BLOCKS[items[i].type];
+   496|          slot.style.background = block.color;
+   497|          slot.innerHTML = `<span class="inv-count">${items[i].count}</span>`;
+   498|        }
+   499|        
+   500|        slot.onclick = () => {
+   501|
